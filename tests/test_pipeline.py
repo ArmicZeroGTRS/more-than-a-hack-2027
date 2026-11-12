@@ -105,8 +105,8 @@ def _tracking(n, ball=(0.5, 0.5), home_dmin=0.4, away_dmin=6.0, home_density=2.0
 def test_evidence_prefers_the_team_on_the_ball():
     scores = evidence.scores(_tracking(200), PARAMS, PITCH)
     assert (scores["home"] > scores["away"]).all()
-    # a ball that never moves is also dead-ball evidence, which is not a contradiction
-    assert (scores["dead"][-1] > 0)
+    # a player is on the ball, so a ball that never moves is not dead-ball evidence
+    assert scores["dead"][-1] == 0.0
 
 
 def test_missing_ball_gives_no_team_evidence():
@@ -134,7 +134,8 @@ def test_missing_ball_with_static_teams_is_dead():
 
 
 def test_static_ball_is_dead():
-    scores = evidence.scores(_tracking(200), PARAMS, PITCH)
+    # nobody within 2 m: the ball is resting, not being played
+    scores = evidence.scores(_tracking(200, home_dmin=4.0, away_dmin=6.5), PARAMS, PITCH)
     assert scores["ball_still"][-1]
     assert scores["dead"][-1] >= PARAMS.w_dead_static_ball
 
@@ -235,6 +236,61 @@ def test_submission_contract():
             handle.writelines("{},H\n".format(i) for i in range(199318))
         frame = metrics.read_label_csv(short)
         assert "row count" in metrics.validate_submission(frame, 199319)
+
+
+def test_end_to_end_writes_a_scorable_file():
+    """Run the real entry point on a synthetic bundle and check the file it produces.
+
+    The ATD stub is 400 lines long, which is enough: the loader only fills the frames that exist, so
+    the remaining 198,919 frames behave exactly as they do on a day when the tracker saw nothing.
+    """
+    import subprocess
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tactical = os.path.join(tmp, "tactical")
+        os.makedirs(tactical)
+        _write(tactical, "BAR-ATH_tactical_atd.xml", META)
+        lines = []
+        # 600 lines inside the graded blocks: home on the ball in the first half, away in the second
+        for frame in list(range(11186, 11486)) + list(range(110809, 111109)):
+            if frame < 100000:
+                players = "0.500,0.500,0.0;0.600,0.500,0.0"
+                ball = "0.510,0.500,0.0"
+            else:
+                players = "0.900,0.500,0.0;0.700,0.500,0.0"
+                ball = "0.710,0.500,0.0"
+            lines.append("{}:{}:{}".format(frame, players, ball))
+        _write(tactical, "BAR-ATH_tactical_atd.txt", "\n".join(lines) + "\n")
+        _write(tactical, "BAR-ATH_tactical_homography.csv",
+               "frame,h00,h01,h02,h10,h11,h12,h20,h21,h22,reprojection_error,valid\n"
+               + "".join("{},1,0,0,0,1,0,0,0,1,0.2,1\n".format(i) for i in range(200)))
+        _write(tactical, "BAR-ATH_tactical_smart_tagging.xml",
+               '<?xml version="1.0"?><file><ALL_INSTANCES><instance>'
+               '<start>0.0</start><end>1.0</end><code>SET PIECES</code>'
+               '<label><group>Type</group><text>Kick Off (Start)</text></label>'
+               '</instance></ALL_INSTANCES></file>')
+
+        out = os.path.join(tmp, "out", "submission.csv")
+        environment = dict(os.environ, MTAH_DATA_DIR=tmp)
+        result = subprocess.run(
+            [sys.executable, os.path.join(ROOT, "run_pipeline.py"),
+             "--out", out, "--cache-dir", os.path.join(tmp, "cache")],
+            capture_output=True, text=True, env=environment, cwd=ROOT)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "validator : PASS" in result.stdout, result.stdout
+
+        with open(out) as handle:
+            rows = handle.read().splitlines()
+        assert rows[0] == "frame,label"
+        assert len(rows) == 199320
+        assert rows[1] == "0,X"
+        assert rows[-1].split(",")[0] == "199318"
+        assert {row.split(",")[1] for row in rows[1:]} <= {"H", "A", "D", "X"}
+        # the stub covers the head of both graded blocks, so both sides appear
+        first_half = {row.split(",")[1] for row in rows[11185:90652]}
+        second_half = {row.split(",")[1] for row in rows[110808:190198]}
+        assert "H" in first_half and "A" in second_half
 
 
 if __name__ == "__main__":

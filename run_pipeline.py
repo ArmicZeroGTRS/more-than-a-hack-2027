@@ -87,7 +87,7 @@ def validate(path, n_expected):
     return possession_metrics.validate_submission(frame, n_expected)
 
 
-def diagnostics(labels, blocks, tracking, info, params):
+def diagnostics(labels, spans, tracking, info, params):
     """Structure of our own output. Aggregate only, and written inside the repo's ignored reports/."""
     counts = {name: int(np.sum(labels == name)) for name in ("H", "A", "D", "X")}
     codes = np.full(len(labels), -1, dtype=np.int8)
@@ -95,7 +95,7 @@ def diagnostics(labels, blocks, tracking, info, params):
         codes[labels == name] = index
 
     per_half = []
-    for half, start, stop in blocks:
+    for half, (start, stop) in enumerate(spans, start=1):
         spells = [(b - a) for a, b, code in model.spells(codes, [(start, stop)])]
         per_half.append({
             "half": half,
@@ -108,10 +108,10 @@ def diagnostics(labels, blocks, tracking, info, params):
 
     return {
         "labels": counts,
-        "graded_frames": int(sum(len(range(start, stop)) for _, start, stop in blocks)),
+        "graded_frames": int(sum(stop - start for start, stop in spans)),
         "spells": int(sum(half["spells"] for half in per_half)),
         "per_half": per_half,
-        "ball_tracked_share": float(np.mean(tracking["ball_valid"])),
+        "ball_tracked_share": float(np.mean(np.isfinite(tracking["ball"][:, 0]))),
         "params": {k: v for k, v in info.items()},
     }
 
@@ -129,7 +129,8 @@ def main(argv=None):
     game = GAME
     pitch = GAMES[game]["pitch"]
     n_frames = source_frames("tactical", game)
-    blocks = half_video_blocks(game)
+    # games.half_video_blocks gives inclusive [first, last]; everything downstream is half-open.
+    spans = [(first, last + 1) for _, first, last in half_video_blocks(game)]
 
     paths = dict(zip(["atd_meta", "atd_raw", "homography", "smart_tagging"],
                      require(["atd_meta", "atd_raw", "homography", "smart_tagging"], game)))
@@ -148,14 +149,14 @@ def main(argv=None):
     scores = evidence.scores(tracking, params, pitch, set_pieces=events)
 
     print("temporal model ...")
-    labels, codes = model.predict(scores, blocks, n_frames, params)
+    labels, codes = model.predict(scores, spans, n_frames, params)
 
     path = write_submission(args.out, labels)
     reason = validate(path, n_frames)
     print("\nsubmission: {}".format(os.path.relpath(path, ROOT)))
     print("validator : {}".format("PASS" if reason is None else "FAIL -- {}".format(reason)))
 
-    summary = diagnostics(labels, blocks, tracking, {
+    summary = diagnostics(labels, spans, tracking, {
         "game": game,
         "params_file": args.config or "defaults",
         "config": json.loads(json.dumps(params.__dict__)),

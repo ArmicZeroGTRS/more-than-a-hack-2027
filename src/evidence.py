@@ -112,8 +112,11 @@ def scores(tracking, params, pitch, set_pieces=None):
     away[~valid] = 0.0
 
     ball_held = _forward_fill(ball)
+    contacted = tracking["contact"].any(axis=1)
+    # A ball at rest with a player on it is a dribble or a restart being taken, not a stoppage; a
+    # ball at rest with nobody near it is the shape of a dead ball. Only the second is evidence.
     ball_still = (_displacement(ball_held, window, pitch) < params.static_ball_m) \
-        & _seen_throughout(valid, window)
+        & _seen_throughout(valid, window) & ~contacted
 
     centroids = tracking["centroid"]
     team_still = np.ones(n, dtype=bool)
