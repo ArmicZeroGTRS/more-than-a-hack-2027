@@ -53,6 +53,14 @@ data/*
 # insurance against it being recreated in here by habit.
 organizers/
 
+# -- possession engine output -------------------------------------------------------------------
+# submissions/ holds a full-match label file: a perfect one is a copy of the ground truth, so it
+# never enters the public repository. reports/ holds diagnostics computed from the tracking.
+submissions/
+outputs/
+reports/
+*.npz
+
 # -- editors and build artifacts ---------------------------------------------------------------
 .idea/
 .vscode/

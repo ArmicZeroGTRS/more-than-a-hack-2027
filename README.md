@@ -178,6 +178,31 @@ Open an issue for anything about the data, the metrics or the documentation — 
 genuinely useful, and a fix that helps you helps everyone equally. For enrolment and the terms of
 use: **hackathon.talentarena@mobileworldcapital.com**.
 
+## Our submission pipeline
+
+The possession engine lives in `src/`, with `run_pipeline.py` as the single entry point. It reads only
+the tactical ATD and its metadata (plus one weak prior from Smart Tagging), never a ground truth.
+
+```bash
+python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+export MTAH_DATA_DIR=/path/to/mtah2027           # Windows: $env:MTAH_DATA_DIR = "D:\mtah2027"
+
+python tests/test_pipeline.py                    # 15 self-checks, no data needed
+python run_pipeline.py --config configs/final.json --out submissions/submission.csv
+```
+
+1. `src/atd.py` parses the tracking into per-frame arrays (cached outside the repository).
+2. `src/evidence.py` scores Home, Away and dead ball per frame from player geometry around the ball.
+3. `src/model.py` runs a three-state Viterbi with a switch cost, then repairs short runs and bridges
+   short stoppages, so possessions stay whole.
+4. The CSV is written and checked with the official validator; the script exits non-zero on failure.
+
+Why the metric shapes the design, what was dropped (homography, both videos, the public ground truth)
+and what is still uncertain: [TECHNICAL_REPORT.md](TECHNICAL_REPORT.md) and [docs/AUDIT.md](docs/AUDIT.md).
+
+Enable the commit guard once per clone: `git config core.hooksPath .githooks`.
+
 ## Licence and citation
 
 The code and documentation in this repository are released under the MIT Licence — see

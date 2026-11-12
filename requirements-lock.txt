@@ -1,0 +1,7 @@
+# Exact versions the submitted file was produced with.
+#
+# requirements.txt (the official, deliberately unpinned pair) is what you install; this file is what
+# the result was actually generated on, so "it scored differently on my machine" has an answer.
+# CPython 3.12.10, Windows 11.
+numpy==2.5.4
+pandas==3.1.1

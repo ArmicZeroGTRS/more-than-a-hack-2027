@@ -1,0 +1,35 @@
+#!/bin/sh
+# Reject a commit that stages match data or a derived frame-level export, or that breaks the
+# engine's self-checks.
+#
+# Enabled per clone (one command, see README):
+#     git config core.hooksPath .githooks
+#
+# The staged list matters here, not the tracked one: a file already committed is caught by CI, but a
+# file about to be committed is still reversible.
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT" || exit 1
+
+# Prefer the project venv -- the self-checks need numpy and pandas, which a bare system python
+# may well not have.
+if [ -x ".venv/Scripts/python.exe" ]; then
+    PY=".venv/Scripts/python.exe"
+elif [ -x ".venv/bin/python" ]; then
+    PY=".venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+    PY=python3
+else
+    PY=python
+fi
+
+"$PY" scripts/check_repo_hygiene.py --staged || {
+    echo ""
+    echo "commit blocked by the repository hygiene check"
+    exit 1
+}
+
+"$PY" tests/test_pipeline.py >/dev/null || {
+    echo "commit blocked: tests/test_pipeline.py failed (run it to see why)"
+    exit 1
+}
